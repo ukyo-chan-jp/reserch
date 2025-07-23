@@ -1,1 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>インタラクティブ中期経営計画レポート | 開発戦略分析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Neutral -->
+    <!-- Application Structure Plan: このSPAは、長文の調査レポートを対話的に探索するためのダッシュボードとして設計されています。主要な構成要素は、(1) 全体像を把握するための統計サマリーとビジュアライゼーション、(2) ユーザーが関心のある企業を効率的に見つけるための検索・フィルタリング機能、(3) フィルタリングされた企業情報を一覧表示するカード型グリッド、(4) 詳細情報を表示するモーダルウィンドウです。この構造は、利用者が膨大な情報の中から目的のデータへ迅速にアクセスし、比較検討することを可能にするため、ユーザビリティを最大化する目的で選択されました。線形的なレポートを読むのではなく、能動的なデータ探索体験を提供します。 -->
+    <!-- Visualization & Content Choices: レポート内の情報を「比較」「整理」「通知」する目的で、以下の手法を選択しました。戦略トレンドの比較には「棒グラフ (Chart.js)」を使用し、各技術領域への注力度の違いを視覚的に示します。計画の有無の割合を通知するためには「ドーナツチャート (Chart.js)」を用います。企業情報の整理と探索には「フィルタリング可能なカードグリッド (HTML/Tailwind/JS)」を採用し、詳細情報は「モーダル (HTML/Tailwind/JS)」で表示します。これにより、SVGやMermaid JSを使用せず、インタラクティブで分かりやすい情報提供を実現しています。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #f8f9fa; /* Light neutral background */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 350px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        .modal-enter {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        .modal-leave {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.95); }
+        }
+        .tag-filter.active {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div id="app" class="container mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">企業別・中期経営計画と開発戦略分析</h1>
+            <p class="text-gray-600">各企業の中期経営計画から、システム・ソフトウェア開発領域の戦略をインタラクティブに探索します。</p>
+        </header>
+
+        <main>
+            <section id="dashboard" class="mb-10 p-6 bg-white rounded-xl shadow-md">
+                <h2 class="text-2xl font-bold mb-4 text-center text-gray-700">全体サマリー</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-center mb-8">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <p class="text-sm text-blue-800 font-semibold">調査対象企業数</p>
+                        <p id="total-companies" class="text-3xl font-bold text-blue-900"></p>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <p class="text-sm text-green-800 font-semibold">中期経営計画あり</p>
+                        <p id="plan-exist" class="text-3xl font-bold text-green-900"></p>
+                    </div>
+                    <div class="bg-yellow-50 p-4 rounded-lg">
+                        <p class="text-sm text-yellow-800 font-semibold">計画情報 不明</p>
+                        <p id="plan-unknown" class="text-3xl font-bold text-yellow-900"></p>
+                    </div>
+                    <div class="bg-indigo-50 p-4 rounded-lg">
+                        <p class="text-sm text-indigo-800 font-semibold">主要技術タグ数</p>
+                        <p id="total-tags" class="text-3xl font-bold text-indigo-900"></p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-xl font-semibold mb-3 text-center text-gray-700">主要技術トレンド</h3>
+                        <div class="chart-container">
+                            <canvas id="techTrendChart"></canvas>
+                        </div>
+                         <p class="text-xs text-gray-500 mt-2 text-center">各企業が注力する技術領域の分布。一つの企業が複数のタグを持つ場合があります。</p>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold mb-3 text-center text-gray-700">中期経営計画の公開状況</h3>
+                        <div class="chart-container">
+                            <canvas id="planStatusChart"></canvas>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2 text-center">調査対象企業における中期経営計画の公開有無の割合。</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="explorer" class="p-6 bg-white rounded-xl shadow-md">
+                <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">企業エクスプローラー</h2>
+                <div class="mb-6">
+                    <input type="text" id="search-input" placeholder="企業名で検索..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                <div id="tag-filters" class="flex flex-wrap gap-2 justify-center mb-6">
+                </div>
+                
+                <div id="company-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                </div>
+
+                <div id="load-more-container" class="text-center mt-8">
+                    <button id="load-more-btn" class="bg-blue-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-600 transition-colors">さらに表示</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center p-4 z-50">
+        <div id="modal-content" class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative p-8">
+            <button id="modal-close" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            <h3 id="modal-title" class="text-2xl font-bold mb-4 text-gray-800"></h3>
+            <div id="modal-tags" class="flex flex-wrap gap-2 mb-4"></div>
+            <p id="modal-summary" class="text-gray-700 leading-relaxed mb-4"></p>
+            <a id="modal-link" href="#" target="_blank" rel="noopener noreferrer" class="inline-block bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">中期経営計画を確認</a>
+        </div>
+    </div>
+
+    <script>
+        const companyData = [
+            { name: '株式会社エクストリーム', summary: '中期経営計画において主力事業への積極的な投資に加え、新分野への参入や営業エリアの拡大を図る方針。特に、DXを企業が持続可能な成長軌道を描く上で最も重要なテーマと位置づけ、中小企業のデジタルシフト推進を支援。Webソリューションとして企画設計からデザイン制作、システム開発までを総合的に提供。', tags: ['DX', 'Webソリューション'], plan_status: 'あり', link: 'http://www.e-xtreme.co.jp/ir/library/plan/' },
+            { name: '株式会社日新システムズ', summary: '2022年4月から2027年3月までの5年間を対象とする中期経営計画を策定。DXの推進が重点施策の一つ。デジタルフォワーディングサービスやIoTを活用した国際物流の可視化サービスによる営業拡大、貨物情報共有システムの構築やIoTによる現場の最適化を通じた業務効率化を目指す。ITおよびデジタル化の推進に50億円を投じる予定。', tags: ['DX', 'IoT', '物流'], plan_status: 'あり', link: 'https://www.nissin-sys.co.jp/ir/management/plan.html' },
+            { name: '株式会社早稲田大学アカデミックソリューション', summary: '2024年3月期から2026年3月期までの中期経営計画を策定。ICTの活用とDX戦略の強化が重要な取り組み。ICTを利活用して運営業務・管理業務の効率化を推進し、サービス品質の向上、成績向上、志望校合格に向けた経営資源の投入環境を整備。2024年1月にDX推進室を設置。', tags: ['DX', 'ICT', '教育'], plan_status: 'あり', link: 'https://www.w-as.jp/news/2023/05/15/5086/' },
+            { name: '株式会社ゲームスタジオ', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標、取り組みに関する公開情報は確認できず。ゲーム開発の実績あり。', tags: ['ゲーム'], plan_status: '不明', link: null },
+            { name: '株式会社数理計画', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: [], plan_status: '不明', link: null },
+            { name: '株式会社ビービーシステム', summary: 'アプリケーションの受託開発、インフラ移行・新規構築SI業務、最新技術を投入したパッケージ開発、クラウドサービスの提供を事業内容とする。特にMicrosoft技術に特化し、Microsoft TeamsやMicrosoft 365のソリューション提供に強みを持つ。', tags: ['クラウド', 'SIer'], plan_status: '不明', link: null },
+            { name: 'ＰＳＰ株式会社', summary: 'パネル加工を専門とする企業。製品情報として「ソフトウェア」を挙げているが、具体的な開発領域の目標は不明。', tags: ['ソフトウェア'], plan_status: '不明', link: null },
+            { name: '株式会社これから', summary: 'ECサイト運営代行、Web広告運用代行、ECコンサルティング、BuzzECや直採りツールの開発・運用、プログラミング教室の運営などを行う。中期経営計画に関する公開情報は確認できず。', tags: ['EC', 'Webソリューション'], plan_status: '不明', link: null },
+            { name: '株式会社永和システムマネジメント', summary: '過去にアジャイル事業部のビジョン・目標・方針を策定・公開。金融システム構築、医療システム開発、Rubyとアジャイル開発の専門性、組み込みソフトウェア分野で強みを発揮。特定の技術領域と開発手法に継続的に注力。', tags: ['アジャイル', '金融', '医療', '組込み'], plan_status: 'あり', link: 'https://www.agile-es.jp/vision' },
+            { name: '株式会社実業之日本総合研究所', summary: '2024年2月1日に、生成AIをはじめとする最新技術を活用し、社会や顧客の課題を解決するための研究開発および業務実装を目的とした専任部門「AI&DX事業推進室（A-DAL）」を発足。コンサルティングサービスに最先端のAI・DX技術を統合。', tags: ['AI', 'DX', 'コンサル'], plan_status: 'あり', link: 'https://www.j-jri.com/news/20240201/' },
+            { name: 'ダイアモンドヘッド株式会社', summary: 'EC/OMOプラットフォーム「F.ACE」の開発・提供が主要事業。商品・在庫情報管理、受発注・売上連携、コンテンツ管理などを提供。ECと実店舗の顧客・在庫情報を一元化し、販売機会の最大化とデータ活用による販促策の実現を支援。', tags: ['EC', 'OMO', 'プラットフォーム'], plan_status: '不明', link: null },
+            { name: '株式会社アイフリークモバイル', summary: 'インターネット広告、アプリ運営、海外市場といったデジタル領域に重点。コンテンツ事業の品質向上と収益率向上を目指し、クリエイターやエンジニア人材の質を高める戦略を推進。モバイルコンテンツやアプリケーションの継続的な開発と改善を図る。', tags: ['モバイル', 'アプリ', '広告'], plan_status: 'あり', link: 'https://www.i-freek.co.jp/ir/management_policy' },
+            { name: '株式会社ジェーエムエーシステムズ', summary: 'システムコンサルティング、クラウド構築・運用、アプリ開発に加え、生成AIやWeb3などの先端技術を用いた開発、DXソリューションを提供。「新技術の学習と現実的適用に努め、垂直・水平双方への事業領域拡大を図る」方針。', tags: ['AI', 'Web3', 'クラウド', 'DX'], plan_status: 'あり', link: 'https://www.jmas.co.jp/company/policy.html' },
+            { name: '株式会社ジール', summary: 'DXプラットフォーム、DX人材育成、マルチクラウド、BI、ビッグデータ、AI領域で事業展開。データ活用を核としたシステム・ソフトウェア開発を推進し、顧客の経営意思決定や行動変革を促進することで、企業価値と生産性向上に貢献。', tags: ['DX', 'AI', 'BI', 'クラウド'], plan_status: '不明', link: null },
+            { name: '日本ラッド株式会社', summary: '2024年4月から3カ年の中期経営計画を策定。「“人”で稼ぐから“アセット”で稼ぐ企業への構造変換」を基本方針とし、IoT/DX領域のノウハウをプロダクト化。M&Aにより「人材」と「技術」を獲得する方針。', tags: ['IoT', 'DX', 'M&A', 'プロダクト'], plan_status: 'あり', link: 'https://www.nippon-rad.co.jp/ir/management/plan/' },
+            { name: '株式会社テクノスジャパン', summary: '2024年3月期から3カ年の中期経営計画を公表。「ERP×CRM×CBP」のトータルソリューションを強化し、次世代クラウド基盤CBPを活用して企業のデータドリブン経営を支援。DX人材やCBPへの積極的な投資を行う。', tags: ['ERP', 'CRM', 'クラウド', 'DX'], plan_status: 'あり', link: 'https://www.tecnos.co.jp/jp/ir/library/plan.html' },
+            { name: '株式会社ＡＩｏＴクラウド', summary: '2025年7月1日付でシャープ株式会社と合併予定。同社単独の中期経営計画に関する情報は確認できず。今後はシャープの経営戦略の一部としてAIoT関連技術開発が進む可能性。', tags: ['AIoT', 'M&A'], plan_status: '不明', link: null },
+            { name: '株式会社アイエンター', summary: 'AIソリューション、AIプラットフォーム、マリンテック、UXデザイン、DXコンサルティングを事業内容とする。生成AIの台頭や人材不足に対応し、B2B企業の売上成長に向けたビジネスモデル改革や成長戦略を支援。', tags: ['AI', 'DX', 'コンサル'], plan_status: '不明', link: null },
+            { name: '株式会社科学情報システムズ', summary: 'ソフトウェア開発とメンテナンスを事業内容とするが、中期経営計画や具体的な技術戦略は不明。', tags: ['ソフトウェア'], plan_status: '不明', link: null },
+            { name: 'アクモス株式会社', summary: '2024年7月から3カ年の中期経営計画2027を策定し、2027年6月期にグループ売上高100億円を目指す。システム・ソフトウェア開発領域に特化した具体的な目標は不明。', tags: [], plan_status: 'あり', link: 'https://www.acmos.co.jp/ir/policy/' },
+            { name: 'クリエーションライン株式会社', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: [], plan_status: '不明', link: null },
+            { name: '株式会社デジタルフォルン', summary: '新中期経営計画（2025年6月期～2027年6月期）で、アジャイル、ローコード、生成AI、Salesforce、DevOps等のトレンド技術提供を推進。R&D・事業強化に35億円、人材投資に35億円を計画。', tags: ['AI', 'アジャイル', 'ローコード', 'クラウド', 'DevOps'], plan_status: 'あり', link: 'https://www.dit-inc.co.jp/ir/management/plan.html' },
+            { name: '株式会社パワーソリューションズ', summary: '2025年～2027年を「変革期」と位置づける中期経営計画を策定。AI搭載SaaSデータの活用により「つくる」から「つかう」へのシフトを図り、コンサルティング領域へ進出。', tags: ['AI', 'SaaS', 'コンサル'], plan_status: 'あり', link: 'https://www.powersolutions.co.jp/ir/management/plan.html' },
+            { name: '応用技術株式会社', summary: '5カ年の中期経営計画「OGI GrowUp2028」を策定。BIM/CIM領域の拡大、Generative Design、積層造形、スマートシティ、再生可能エネルギー関連のシミュレーション技術提供を進める。', tags: ['BIM/CIM', 'シミュレーション', 'スマートシティ'], plan_status: 'あり', link: 'https://www.apptec.co.jp/ir/management/plan.html' },
+            { name: '株式会社コアコンセプト・テクノロジー', summary: 'DX開発基盤「Orizuru」を軸に、製造業・建設業・物流業へのDX支援を拡大。WMS、TMS導入に加え、AIを活用した最適化システムを構築。3D形状処理、画像処理、IoT、AI技術が強み。', tags: ['DX', 'AI', 'IoT', '3D', '製造'], plan_status: 'なし', link: null },
+            { name: 'テックファーム株式会社', summary: '社員の健康をサポートする「健康中期計画」の一環として、ゲーム要素を取り入れた健康促進スマートフォンアプリを自社開発。', tags: ['アプリ', 'ヘルスケア'], plan_status: 'あり', link: 'https://www.techfirm.co.jp/news/2016/0901.html' },
+            { name: '株式会社ゼネテック', summary: '2024年3月期から3カ年の中期経営計画を公表。「デジタルテクノロジーで、人と地球にやさしい未来をつくる。」を掲げ、システム開発の上流工程と製造・販売型の重点をシフト。', tags: ['DX'], plan_status: 'あり', link: 'https://www.genetec.co.jp/ir/management/plan.html' },
+            { name: '株式会社テクロス', summary: '循環器領域の総合サイトを運営。医療従事者や企業のプレゼンス向上に貢献することを目指す。中期経営計画に関する公開情報は確認できず。', tags: ['医療', 'Webソリューション'], plan_status: '不明', link: null },
+            { name: '株式会社SUPER STUDIO', summary: 'D2Cブランド向けにデジタルとリアル店舗を掛け合わせたOMOソリューションを提供。ECと実店舗の連携を強化するソフトウェア開発に注力。物流や「&mall」との連携も視野に。', tags: ['EC', 'OMO', 'リテールテック'], plan_status: '不明', link: null },
+            { name: '株式会社ガラパゴス', summary: '「2030年にありたい姿」を実現するための中期経営計画を策定。AIを活用したWeb広告デザイン制作「AIR Design」を展開し、広告デザイン領域での成長を目指す。人材への投資を強化。', tags: ['AI', '広告'], plan_status: 'あり', link: 'https://www.glpgs.com/company/vision/' },
+            { name: '株式会社Ｐｒｅｆｅｒｒｅｄ Networks', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['AI'], plan_status: '不明', link: null },
+            { name: '株式会社トリプルアイズ', summary: '中長期成長戦略として4つのAI実装戦略を掲げる。画像認識技術を核としたAIプロダクト、オーダーメイドAI開発を展開。M&Aを駆使しレガシー産業へAI実装。GPUサーバー事業も推進。', tags: ['AI', '画像認識', 'M&A'], plan_status: 'あり', link: 'https://www.3-ize.jp/ir/management/strategy' },
+            { name: 'ユニファ株式会社', summary: '「家族の幸せを生み出すあたらしい社会インフラを世界中で創り出す」をビジョンにESG経営を推進。技術を活用した社会インフラ構築に焦点を当てる。', tags: ['保育', 'プラットフォーム'], plan_status: '不明', link: null },
+            { name: '株式会社ＡＣＣＥＳＳ', summary: '第9次中期経営計画（2025-2028）で「ソリューションプロバイダー」を目指す。マーケティング力とデジタル、ロジ機能を活用。開発製品売上高を3年で110億円から200億円へ、EC事業売上高を40億円から200億円へ拡大目標。', tags: ['DX', 'EC', '物流'], plan_status: 'あり', link: 'https://www.access-jp.com/ir/management/plan/' },
+            { name: 'ナイル株式会社', summary: 'デジタルマーケティング事業や自動車産業DX事業を通じて日本のDX推進に貢献。中長期的な展望を重視し、人材が最大限活躍できる環境作りに注力。', tags: ['DX', 'マーケティング', '自動車'], plan_status: 'なし', link: null },
+            { name: '株式会社フィックスターズ', summary: '中期経営計画で高速化技術を核に、自動運転、遺伝子解析、金融、AI等の分野展開を加速。SaaS事業で新規サービス開発を推進し、特に生成AI関連の事業機会を追求。', tags: ['高速化技術', 'AI', 'SaaS', '自動運転'], plan_status: 'あり', link: 'https://www.fixstars.com/ja/ir/management/plan.html' },
+            { name: '株式会社フレクト', summary: 'クラウドインテグレーションサービス中心。2026年3月期に売上高96億円目標。マルチクラウド強化、専門職従業員の組織拡大、先端テクノロジーによる高付加価値創出の研究開発へ投資。', tags: ['クラウド', 'SIer'], plan_status: 'あり', link: 'https://flect.co.jp/ir/management/plan' },
+            { name: '株式会社エクサウィザーズ', summary: '生成AI等のテクノロジーを利活用したプロダクト・サービスを企画・開発・販売。国内シェア1位のexaBase 生成AIで「GPT-4o mini」等を提供開始。AIエージェント「exaBase 採用アシスタント」等もリリース。', tags: ['AI', 'SaaS', 'プラットフォーム'], plan_status: 'あり', link: 'https://exawizards.com/ir/library/materials/' },
+            { name: '株式会社セック', summary: '社会基盤システム分野と宇宙先端システム分野の成長を予測し、これらの分野のシステム・ソフトウェア開発に注力。', tags: ['社会インフラ', '宇宙'], plan_status: '不明', link: null },
+            { name: '株式会社ニジボックス', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: [], plan_status: '不明', link: null },
+            { name: '株式会社ミツエーリンクス', summary: '長期経営ビジョン「Vision 2030」で売上高3,000億円規模の企業グループを目指す。顧客接点DX領域の事業強化・確立を掲げ、Salesforce関連人材をXイノベーション本部に集約。', tags: ['DX', 'クラウド', 'UI/UX'], plan_status: 'あり', link: 'https://www.mitsue.co.jp/company/vision/' },
+            { name: '株式会社ＬＡＳＳＩＣ', summary: '中期経営計画で「50の地域に、1,000人の仲間を」を目標に人材を積極採用。地域活性化や地方創生に貢献するWeb領域の事業を展開。', tags: ['地方創生', 'Webソリューション'], plan_status: 'あり', link: 'https://www.lassic.co.jp/recruit/vision/' },
+            { name: '株式会社テンダ', summary: '内部策定の中期経営計画で年率115～123%の売上高成長を目指す。主力製品「Dojo」シリーズに生成AI機能を開発・実装。M&AでIPビジネスやゲーム技術を獲得。Web3.0領域にも挑戦。', tags: ['AI', 'ゲーム', 'Web3', 'M&A'], plan_status: 'あり', link: 'https://www.tenda.co.jp/ir/management/plan.html' },
+            { name: '株式会社ＬＩＧ', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['Webソリューション'], plan_status: '不明', link: null },
+            { name: 'イーソル株式会社', summary: '中期経営計画「eSOL Reborn 2030」を策定。SDx（ソフトウェア定義）をモノづくりに活用し、SDV（Software Defined Vehicle）を広義のビークルと捉え、車載ソフトウェア市場をターゲットとする。', tags: ['組込み', '自動車', 'SDV'], plan_status: 'あり', link: 'https://www.esol.co.jp/ir/management/plan.html' },
+            { name: 'サイバーステップ株式会社', summary: '中長期的な成長を目指し、NFT・仮想通貨分野へ進出。自社Web3ウォレット、NFT紐づけ商品、デジタルアセット販売サイト、ブロックチェーンゲーム『Eggle』等を計画。メタバース分野にも積極展開。', tags: ['ゲーム', 'Web3', 'NFT', 'メタバース'], plan_status: 'あり', link: 'https://corp.cyberstep.com/management/business_strategy' },
+            { name: '株式会社テクノア', summary: '製造業向け生産管理ソリューション、AI&IoTソリューション、医療機関向けシステム、3Dシミュレーションシステム等を手掛けるが、中期的な開発計画は不明。', tags: ['製造', 'AI', 'IoT', '医療'], plan_status: '不明', link: null },
+            { name: '株式会社ソフトクリエイト', summary: '新中期経営計画（FY2025-FY2027）で売上・利益の過去最高更新、ストック売上増加。中堅企業向けに最適なITソリューション・サービスを提供。', tags: ['SIer', 'クラウド'], plan_status: 'あり', link: 'https://www.softcreate.co.jp/ir/management/plan' },
+            { name: '株式会社ＯＳＫ', summary: '中期経営計画でソフトウェア開発の品質、コスト競争力、技術力の向上を最重要課題とする。', tags: ['ソフトウェア', '品質管理'], plan_status: 'あり', link: 'https://www.osk.co.jp/ir/policy/' },
+            { name: '株式会社フォーラムエイト', summary: 'DX方針として「F8-AI クラウドCAD」開発を中心プロジェクトに推進。「全ソリューションのAI搭載プロジェクト」のためクラウドAI開発グループを発足。', tags: ['AI', 'CAD', 'クラウド', 'DX'], plan_status: 'あり', link: 'https://www.forum8.co.jp/topic/dx.htm' },
+            { name: 'W2株式会社', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['EC', 'プラットフォーム'], plan_status: '不明', link: null },
+            { name: '株式会社ラキール', summary: '中期経営計画で「自動化・AIを活かした対応」と「総合サービス力による対応」を掲げる。「AI×セキュリティ」の推進と「統合セキュリティサービスプラットフォーム」の構築が鍵。', tags: ['AI', 'セキュリティ', 'プラットフォーム'], plan_status: 'あり', link: 'https://www.lakeel.com/ir/management/plan/' },
+            { name: 'エヌ・デーソフトウェア株式会社', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['介護', 'ソフトウェア'], plan_status: '不明', link: null },
+            { name: '株式会社ＩＤＡＪ', summary: '2023年度を初年度とする新中期経営計画を策定しているが、開発領域の具体的な目標は不明。', tags: ['シミュレーション', 'ソフトウェア'], plan_status: 'あり', link: 'https://www.idaj.co.jp/company/philosophy/' },
+            { name: '株式会社ハンモック', summary: '3カ年中期経営計画「Transformation for the Future」を策定。2030年代を見据えた事業の多角化と持続的な成長の基盤づくりに取り組む自社ソフトウェアメーカー。', tags: ['ソフトウェア', 'SaaS'], plan_status: 'あり', link: 'https://www.hammock.jp/ir/management/plan.html' },
+            { name: 'サイバネットシステム株式会社', summary: '5カ年の中期経営計画でM&Aも活用し自社開発製品・サービス、アジア事業を拡大。2026年12月期に売上高300億円、EBITDA38億円を目指す。', tags: ['シミュレーション', 'M&A', 'ソフトウェア'], plan_status: 'あり', link: 'https://www.cybernet.co.jp/ir/management/plan/' },
+            { name: 'エムオーテックス株式会社', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['セキュリティ', 'IT資産管理'], plan_status: '不明', link: null },
+            { name: 'ジオテクノロジーズ株式会社', summary: '経営戦略発表会で「予測可能な世界を創る」をビジョンに掲げ、パートナー戦略「GPPE」を開始。デジタル地図や人流ビッグデータ、位置情報を提供するプラットフォームを構築し、災害・集客・渋滞予測などを可能に。', tags: ['地図', 'ビッグデータ', 'AI', 'プラットフォーム'], plan_status: 'あり', link: 'https://geot.jp/news/2023/06/16/1130/' },
+            { name: 'jinjer株式会社', summary: '中長期経営計画で社員数の増員をテーマに、管理体制を構築。人事労務管理システム「ジンジャー」を提供し、リアルタイム勤怠把握、統合データベースによる人事データ活用を実現。', tags: ['HR Tech', 'SaaS'], plan_status: 'あり', link: 'https://jinjer.co.jp/recruit/culture/voice/02/' },
+            { name: 'Ubie株式会社', summary: '「テクノロジーで人々を適切な医療に案内する」をミッションに、AIをコア技術として症状検索エンジン「ユビー」と「ユビーAI問診」を開発・提供。', tags: ['ヘルスケア', 'AI', 'アプリ'], plan_status: 'なし', link: null },
+            { name: '株式会社シナモン', summary: '約2年後の2027年3月期に営業利益650億円以上を目指す中期経営計画を掲げ、AIソリューション分野で大きな成長を計画。', tags: ['AI'], plan_status: 'あり', link: 'https://cinnamon.ai/ir/management/plan/' },
+            { name: 'ＨＥＮＮＧＥ株式会社', summary: 'クラウドセキュリティサービス「HENNGE One」が主力製品。新技術を積極的に取り入れ、顧客に役立つ技術を見極めて広く提供する方針。ARR目標達成に向けた定量的分析を行う。', tags: ['セキュリティ', 'クラウド', 'SaaS'], plan_status: 'あり', link: 'https://hennge.com/jp/ir/library/strategy.html' },
+            { name: '株式会社ティアフォー', summary: '自動運転のオープンソースソフトウェア「Autoware」を開発するディープテック企業。中期経営計画の詳細は不明だが、自動運転技術の社会実装を目指す。', tags: ['自動運転', 'オープンソース', 'AI'], plan_status: '不明', link: null },
+            { name: '株式会社ヒューマンテクノロジーズ', summary: '勤怠管理システム「KING OF TIME」を軸に、HR領域におけるマルチソリューションベンダーを目指す。国内勤怠管理市場で10%シェア獲得を目標。データに基づく気づきで顧客の生産性向上を実現。', tags: ['HR Tech', 'SaaS'], plan_status: 'あり', link: 'https://www.h-t.co.jp/ir/management/plan/' },
+            { name: 'ベルフェイス株式会社', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。オンライン営業システム「bellFace」を提供。', tags: ['SaaS', 'セールステック'], plan_status: '不明', link: null },
+            { name: '株式会社システムインテグレータ', summary: '新中期経営計画「SDGs Mind 2021」で「時間を与えるソフトウェアを創り続ける」をスローガンに。E-Commerce、ERP事業が堅調。AI事業「AISI∀」とプログラミングスキル判定「TOPSIC」を育成。', tags: ['ERP', 'EC', 'AI', 'SDGs'], plan_status: 'あり', link: 'https://www.sint.co.jp/ir/management/plan.html' },
+            { name: 'ソフトブレーン株式会社', summary: '過去の中期経営計画で「フロー型からストック型収益モデル」への構造改革を推進。営業支援システム「eセールスマネージャーRemix」のカスタマイズや特定業種向け開発に注力。', tags: ['SaaS', 'CRM', 'セールステック'], plan_status: 'あり', link: 'https://www.softbrain.co.jp/investor/management-plan.html' },
+            { name: '株式会社アドバンスト・メディア', summary: '中期経営計画で2027年までに売上高100億円、営業利益25億円を目指す。AI音声認識AmiVoice®を核に、M&A戦略で音声・言語技術の拡大と新規ビジネス創出を推進。', tags: ['AI', '音声認識', 'M&A'], plan_status: 'あり', link: 'https://www.advanced-media.co.jp/ir/management/plan' },
+            { name: 'Repro株式会社', summary: '「世界で最も価値のあるマーケティングソリューションを実現する」をビジョンに、約3年分の開発マイルストーンを含む中期製品戦略を策定。顧客フィードバックを重視したSaaSプロダクト開発を継続。', tags: ['SaaS', 'マーケティング', 'アプリ'], plan_status: 'あり', link: 'https://repro.io/company/' },
+            { name: '株式会社オプティム', summary: '2023年度より新中期経営計画を策定。2025年3月期に売上高113億円、営業利益19.5億円を目指す。AI・IoT・Big Data・Cloud・Security・Robotics技術を組み合わせたソリューションを提供。', tags: ['AI', 'IoT', 'ビッグデータ', 'クラウド', 'セキュリティ'], plan_status: 'あり', link: 'https://www.optim.co.jp/ir/library/plan' },
+            { name: '株式会社ビーイング', summary: '「経営革新計画」を策定し、中小企業の「新事業活動」と「経営の相当程度の向上」を目的とする。建設技術者領域の拡大などを重点戦略とする。', tags: ['建設'], plan_status: 'あり', link: 'https://www.being-group.jp/being/keiei/keikaku.html' },
+            { name: '株式会社ジャストシステム', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['ソフトウェア', '教育'], plan_status: '不明', link: null },
+            { name: '株式会社ｇｕｍｉ', summary: '3カ年の新中期経営計画で、モバイルオンラインゲーム事業とブロックチェーン等事業に注力。他社有力IPの開発、ブロックチェーンゲームの型確立、Web3スタートアップ支援などを推進。', tags: ['ゲーム', 'Web3', 'ブロックチェーン', 'NFT'], plan_status: 'あり', link: 'https://www.gu3.co.jp/ir/management/plan/' },
+            { name: 'ＫＬａｂ株式会社', summary: '中期計画で新作タイトルの投入によるIP成長戦略を推進。ハイパーカジュアルゲームへの進出や開発支援モデルなど、ゲーム開発・運営以外の収益源も育成。', tags: ['ゲーム', 'モバイル'], plan_status: 'あり', link: 'https://www.klab.com/jp/ir/management/plan/' },
+            { name: '株式会社スマレジ', summary: '長期ビジョン「VISION2031」と中期経営計画を更新。中大型案件への注力、基幹システムとの連携開発強化、OMO・オムニチャネル領域の充実化、オンライン決済領域への挑戦などを推進。', tags: ['SaaS', 'リテールテック', '決済', 'OMO'], plan_status: 'あり', link: 'https://corp.smaregi.jp/ir/management/plan.php' },
+            { name: '株式会社サイバード', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['ゲーム', 'モバイル'], plan_status: '不明', link: null },
+            { name: '株式会社コドモン', summary: '新中期経営計画で売上高・営業利益目標を前倒し達成。保育・教育分野のソフトウェアサービス「コドモン」を基盤に、国際教育、産後ケア、ファミリーサポートなど新事業領域を拡大。', tags: ['保育', '教育', 'SaaS'], plan_status: 'あり', link: 'https://www.codmon.co.jp/ir/' },
+            { name: '株式会社シャノン', summary: '中期経営計画を一度取り下げ、投資と成長のバランスを見直し中。当面は既存事業とM&Aの相乗効果による成長と収益性向上を目指す。', tags: ['SaaS', 'マーケティング', 'メタバース'], plan_status: 'あり', link: 'https://www.shanon.co.jp/ir/management/plan/' },
+            { name: '株式会社ルーデル', summary: 'H.U.グループとして5カ年の中期経営計画「H.U. 2030」を策定。一体化経営の深化と持続的な成長を目指す。', tags: ['ヘルスケア'], plan_status: 'あり', link: 'https://www.hugp.com/ir/management/plan.html' },
+            { name: '株式会社プレイド', summary: '2025年9月期に売上高135億円、調整後営業利益8.7億円を見込む。CXプラットフォーム「KARTE」を核に、トップライン成長とグループ経営高度化への投資を継続。', tags: ['SaaS', 'CX', 'マーケティング'], plan_status: 'あり', link: 'https://plaid.co.jp/ir/library/' },
+            { name: '株式会社ドリーム・アーツ', summary: '中期経営計画を刷新し、長期的な視点で成長戦略を策定。クラウド事業が業績を牽引。アップセル・クロスセル強化のため有料サービスの企画開発を推進。', tags: ['クラウド', 'SaaS'], plan_status: 'あり', link: 'https://www.dreamarts.co.jp/ir/management/plan/' },
+            { name: '株式会社建設システム', summary: 'CTIグループ中期経営計画2024で「生産システム改革の推進」を目標に掲げる。3年間で30億円の純研究開発投資を計画。', tags: ['建設', 'BIM/CIM', 'R&D'], plan_status: 'あり', link: 'https://www.kentem.jp/company/group/' },
+            { name: '株式会社サーバーワークス', summary: '中期経営方針（FY26-FY28）で「クラウド×セキュリティ×生成AI」を総合支援する戦略パートナーを目指す。AWSとの戦略的協業契約を軸に、セキュリティ、生成AI領域への投資を強化。', tags: ['クラウド', 'セキュリティ', 'AI'], plan_status: 'あり', link: 'https://www.serverworks.co.jp/ir/management/plan' },
+            { name: '株式会社メディックス', summary: '成長戦略「Beyond 広告」を掲げ、マーケティングオートメーション、インサイドセールス、カスタマーサクセスといった広告の後工程の新領域へ進出。', tags: ['広告', 'マーケティング', 'SaaS'], plan_status: 'あり', link: 'https://www.medix-inc.co.jp/ir/' },
+            { name: '株式会社ビデオリサーチ', summary: '中期経営計画の3年目で「データ＆システム会社と呼ぶにふさわしい事業構造を目指す」。データ分析とシステム開発を事業構造の核として強化。', tags: ['データ分析', 'メディア'], plan_status: 'あり', link: 'https://www.videor.co.jp/company/message.html' },
+            { name: '株式会社インプレス', summary: '2026年度までに連結売上高200億円、経常利益20億円を目指す中期経営計画を発表。デジタル技術を活用したメディアコンテンツの提供と事業拡大に注力。', tags: ['メディア', '出版'], plan_status: 'あり', link: 'https://www.impressholdings.com/ir/management/plan.html' },
+            { name: '株式会社オークネット', summary: '新中期経営計画「Blue Print 2027」でGCV1兆円、EBITDA100億円を目指す。オンラインプラットフォームの強化、会員制マーケティングの深化、AIS（検査）の拡大に注力。', tags: ['プラットフォーム', 'リユース', '検査'], plan_status: 'あり', link: 'https://www.aucnet.co.jp/ir/management/plan/' },
+            { name: '株式会社日本経済廣告社', summary: '第3次中期経営計画推進のため中期経営計画室を新設。デジタルを活用したプロモーション活動に取り組む。', tags: ['広告', 'マーケティング'], plan_status: 'あり', link: 'https://www.ad-nikkei.co.jp/company/release/20220401/' },
+            { name: 'ダイナミックマッププラットフォーム株式会社', summary: '中期経営計画「サステナビリティ・トランスフォーメーション 2030」を始動。高精度地図データとそのプラットフォーム開発を通じ、自動運転や次世代モビリティ社会の実現に貢献。', tags: ['地図', '自動運転', 'プラットフォーム'], plan_status: 'あり', link: 'https://www.dynamic-maps.co.jp/news/2024/636/index.html' },
+            { name: '株式会社ナビタイムジャパン', summary: 'NAVITIME製品によって算出された最適経路や時間が次代の産業創出の原動力となるよう、常に開発の向上に努める。ナビゲーション技術を核としたソフトウェア開発を推進。', tags: ['地図', 'ナビゲーション', 'モビリティ'], plan_status: 'なし', link: null },
+            { name: '株式会社朝日広告社', summary: '中期経営計画やシステム・ソフトウェア開発の具体的な目標に関する公開情報は確認できず。', tags: ['広告'], plan_status: '不明', link: null },
+            { name: 'アイティメディア株式会社', summary: '中期経営方針でBtoBプラットフォームの強化（新サービス・プロダクツ含む機能強化、販売力強化など）を掲げる。', tags: ['メディア', 'BtoB', 'プラットフォーム'], plan_status: 'あり', link: 'https://corp.itmedia.co.jp/ir/management/policy/' },
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const state = {
+                searchTerm: '',
+                activeTags: new Set(),
+                itemsToShow: 20,
+                filteredData: [],
+            };
+
+            const searchInput = document.getElementById('search-input');
+            const companyGrid = document.getElementById('company-grid');
+            const tagFiltersContainer = document.getElementById('tag-filters');
+            const loadMoreBtn = document.getElementById('load-more-btn');
+            const modal = document.getElementById('modal');
+            const modalContent = document.getElementById('modal-content');
+            const modalClose = document.getElementById('modal-close');
+
+            function setupDashboard() {
+                const totalCompanies = companyData.length;
+                const planExist = companyData.filter(c => c.plan_status === 'あり').length;
+                const planUnknown = totalCompanies - planExist;
+                
+                document.getElementById('total-companies').textContent = totalCompanies;
+                document.getElementById('plan-exist').textContent = planExist;
+                document.getElementById('plan-unknown').textContent = planUnknown;
+
+                const allTags = companyData.flatMap(c => c.tags);
+                const uniqueTags = [...new Set(allTags)];
+                document.getElementById('total-tags').textContent = uniqueTags.length;
+                
+                createTechTrendChart(allTags);
+                createPlanStatusChart(planExist, planUnknown);
+                createTagFilters(uniqueTags);
+            }
+
+            function createTechTrendChart(allTags) {
+                const tagCounts = allTags.reduce((acc, tag) => {
+                    acc[tag] = (acc[tag] || 0) + 1;
+                    return acc;
+                }, {});
+
+                const sortedTags = Object.entries(tagCounts).sort(([, a], [, b]) => b - a).slice(0, 10);
+                const labels = sortedTags.map(item => item[0]);
+                const data = sortedTags.map(item => item[1]);
+
+                new Chart(document.getElementById('techTrendChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '企業数',
+                            data: data,
+                            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return ` ${context.raw} 社`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+
+            function createPlanStatusChart(planExist, planUnknown) {
+                new Chart(document.getElementById('planStatusChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['計画あり', '不明'],
+                        datasets: [{
+                            data: [planExist, planUnknown],
+                            backgroundColor: ['rgba(16, 185, 129, 0.7)', 'rgba(245, 158, 11, 0.7)'],
+                            borderColor: ['rgba(16, 185, 129, 1)', 'rgba(245, 158, 11, 1)'],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                            }
+                        }
+                    }
+                });
+            }
+            
+            function createTagFilters(uniqueTags) {
+                const sortedUniqueTags = uniqueTags.sort();
+                tagFiltersContainer.innerHTML = '';
+                const allButton = document.createElement('button');
+                allButton.textContent = 'すべて';
+                allButton.className = 'tag-filter px-3 py-1 border rounded-full text-sm transition active';
+                allButton.dataset.tag = 'all';
+                allButton.addEventListener('click', () => {
+                    tagFiltersContainer.querySelectorAll('.tag-filter').forEach(btn => btn.classList.remove('active'));
+                    allButton.classList.add('active');
+                    state.activeTags.clear();
+                    filterAndRender();
+                });
+                tagFiltersContainer.appendChild(allButton);
+
+                sortedUniqueTags.forEach(tag => {
+                    const button = document.createElement('button');
+                    button.textContent = tag;
+                    button.className = 'tag-filter px-3 py-1 border rounded-full text-sm transition';
+                    button.dataset.tag = tag;
+                    button.addEventListener('click', () => {
+                        tagFiltersContainer.querySelector('[data-tag="all"]').classList.remove('active');
+                        button.classList.toggle('active');
+                        if (state.activeTags.has(tag)) {
+                            state.activeTags.delete(tag);
+                        } else {
+                            state.activeTags.add(tag);
+                        }
+                        if (state.activeTags.size === 0) {
+                            tagFiltersContainer.querySelector('[data-tag="all"]').classList.add('active');
+                        }
+                        filterAndRender();
+                    });
+                    tagFiltersContainer.appendChild(button);
+                });
+            }
+
+            function renderCompanyGrid() {
+                companyGrid.innerHTML = '';
+                const dataToRender = state.filteredData.slice(0, state.itemsToShow);
+                dataToRender.forEach(company => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-gray-50 p-4 rounded-lg border border-gray-200 hover:shadow-lg hover:border-blue-400 transition cursor-pointer';
+                    card.innerHTML = `
+                        <h4 class="font-bold text-md text-gray-800 mb-2 truncate">${company.name}</h4>
+                        <div class="flex flex-wrap gap-1">
+                            ${company.tags.slice(0, 3).map(tag => `<span class="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">${tag}</span>`).join('')}
+                        </div>
+                    `;
+                    card.addEventListener('click', () => showModal(company));
+                    companyGrid.appendChild(card);
+                });
+                
+                loadMoreBtn.style.display = state.itemsToShow >= state.filteredData.length ? 'none' : 'inline-block';
+            }
+
+            function filterAndRender() {
+                state.filteredData = companyData.filter(company => {
+                    const matchesSearch = company.name.toLowerCase().includes(state.searchTerm.toLowerCase());
+                    const matchesTags = state.activeTags.size === 0 || [...state.activeTags].every(tag => company.tags.includes(tag));
+                    return matchesSearch && matchesTags;
+                });
+                state.itemsToShow = 20;
+                renderCompanyGrid();
+            }
+            
+            function showModal(company) {
+                document.getElementById('modal-title').textContent = company.name;
+                document.getElementById('modal-summary').textContent = company.summary;
+                const modalTagsContainer = document.getElementById('modal-tags');
+                modalTagsContainer.innerHTML = company.tags.map(tag => `<span class="bg-indigo-100 text-indigo-800 text-sm font-semibold px-3 py-1 rounded-full">${tag}</span>`).join('');
+                const linkElement = document.getElementById('modal-link');
+                if (company.link) {
+                    linkElement.href = company.link;
+                    linkElement.style.display = 'inline-block';
+                } else {
+                    linkElement.style.display = 'none';
+                }
+                modal.classList.remove('hidden');
+                modal.classList.add('flex', 'modal-enter');
+            }
+
+            function hideModal() {
+                modal.classList.add('modal-leave');
+                setTimeout(() => {
+                    modal.classList.remove('flex', 'modal-enter', 'modal-leave');
+                    modal.classList.add('hidden');
+                }, 300);
+            }
+
+            searchInput.addEventListener('input', (e) => {
+                state.searchTerm = e.target.value;
+                filterAndRender();
+            });
+
+            loadMoreBtn.addEventListener('click', () => {
+                state.itemsToShow += 20;
+                renderCompanyGrid();
+            });
+
+            modalClose.addEventListener('click', hideModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    hideModal();
+                }
+            });
+
+            setupDashboard();
+            filterAndRender();
+        });
+    </script>
+</body>
+</html>
 
